@@ -1,6 +1,6 @@
 // Offline support: always try the network first so updates pushed to GitHub show up,
 // and fall back to the saved copy when the phone is offline.
-const CACHE = "goal-calendar-v3";
+const CACHE = "goal-calendar-v5";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (e) => {
