@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>목표 캘린더</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="목표 캘린더">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#F2F4F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111513" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<style>
+/* Layout: phone = one pane at a time with a bottom tab bar (오늘 / 캘린더 / 설정); wide screens = calendar left, goals right */
+:root {
+  --bg: #F2F4F1;
+  --surface: #FFFFFF;
+  --sunken: #F6F8F5;
+  --ink: #18201B;
+  --muted: #65706A;
+  --line: #DCE2DC;
+  --line-strong: #B9C3BB;
+  --done: #23854F;
+  --on-done: #FFFFFF;
+  --week: #3364C8;
+  --warn: #B4472E;
+  --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", system-ui, sans-serif;
+  --r: 14px;
+  --tabbar: 58px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111513; --surface: #1A201C; --sunken: #151A16; --ink: #E5EBE6; --muted: #95A199; --line: #2B342E; --line-strong: #46524A;
+    --done: #45B57A; --on-done: #0C1A11; --week: #739DF0; --warn: #E07A61; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* scrolling only: no pinch zoom and no double-tap zoom (manipulation would still allow pinch) */
+html, body, button, input, label, .cell { touch-action: pan-x pan-y; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--week); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* header */
+header.top {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid var(--line);
+}
+header.top .in {
+  max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px;
+}
+header.top h1 { margin: 0; font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em; }
+.todaychip { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+.ring { --p: 0; width: 26px; height: 26px; border-radius: 50%;
+  background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--line) 0);
+  -webkit-mask: radial-gradient(circle, transparent 7px, #000 8px); mask: radial-gradient(circle, transparent 7px, #000 8px); }
+.todaychip b { color: var(--ink); font-size: 1rem; min-width: 3.2ch; text-align: right; }
+
+/* page */
+.layout {
+  max-width: 1180px; margin: 0 auto; display: grid; gap: 16px; align-items: start;
+  padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px));
+  padding-top: 14px;
+  padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom, 0px) + 24px);
+}
+.side, .pane { display: grid; gap: 16px; min-width: 0; }
+@media (max-width: 919px) { .pane:not(.active) { display: none; } }
+@media (min-width: 920px) {
+  .layout { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); padding-bottom: 40px; padding-top: 20px; }
+  .tabbar { display: none !important; }
+}
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; min-width: 0; }
+.card h2 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+.sub { color: var(--muted); font-size: 0.82rem; }
+.card h3 { margin: 14px 0 4px; font-size: 0.8rem; color: var(--muted); font-weight: 600; letter-spacing: 0.03em; }
+
+/* calendar */
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.cal-head h2 { font-size: 1.25rem; }
+.navs { display: flex; gap: 6px; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; min-height: 36px; padding: 4px 12px; font-size: 0.88rem; }
+.btn:active { background: var(--sunken); }
+.btn.icon { width: 38px; padding: 0; font-size: 1.1rem; }
+.dow, .row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.dow div { text-align: center; font-size: 0.74rem; color: var(--muted); padding-bottom: 4px; }
+.dow div:nth-child(6) { color: var(--week); }
+.dow div:nth-child(7) { color: var(--warn); }
+.weeks { display: grid; gap: 8px; }
+.week { display: grid; gap: 4px; }
+.cell {
+  --p: 0;
+  min-height: 56px; border-radius: 9px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--done) calc(var(--p) * 0.55%), var(--surface));
+  padding: 4px 5px; text-align: left; display: flex; flex-direction: column; justify-content: space-between;
+  transition: background-color .35s ease, color .35s ease, transform .12s ease;
+}
+.cell:active { transform: scale(0.96); }
+.cell .d { font-size: 0.8rem; font-weight: 600; }
+.cell .v { align-self: flex-end; font-size: 0.74rem; font-weight: 700; }
+.cell .v.muted { color: var(--muted); font-weight: 500; font-size: 0.66rem; }
+.cell.out { opacity: 0.4; }
+.cell.full { background: var(--done); color: var(--on-done); border-color: var(--done); }
+.cell.today { box-shadow: inset 0 0 0 2px var(--ink); }
+.cell.sel { outline: 2px solid var(--week); outline-offset: 1px; }
+.wbar { display: flex; align-items: center; gap: 6px; height: 12px; }
+.track { flex: 1; height: 5px; border-radius: 3px; background: var(--sunken); border: 1px solid var(--line); overflow: hidden; }
+.track .fill { height: 100%; width: 0; background: var(--week); transition: width .7s cubic-bezier(.22,.8,.3,1); }
+.wbar .lbl { font-size: 0.66rem; color: var(--week); min-width: 50px; text-align: right; white-space: nowrap; }
+.stats { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); align-items: center; }
+.stat { display: grid; }
+.stat b { font-size: 1.3rem; font-weight: 700; }
+.stat span { font-size: 0.75rem; color: var(--muted); }
+.legend { margin-left: auto; display: flex; align-items: center; gap: 3px; font-size: 0.7rem; color: var(--muted); }
+.legend i { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--line); display: inline-block; }
+@media (min-width: 520px) { .cell { min-height: 66px; padding: 6px 7px; } .cell .d { font-size: .88rem; } .cell .v { font-size: .84rem; } .wbar .lbl { min-width: 62px; font-size: .7rem; } }
+
+/* goal cards */
+.panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.big { font-size: 2rem; font-weight: 800; line-height: 1; letter-spacing: -0.02em; display: inline-block; }
+.big.day { color: var(--done); }
+.big.week { color: var(--week); }
+.gauge { position: relative; height: 12px; border-radius: 6px; background: var(--sunken); border: 1px solid var(--line); overflow: hidden; margin-bottom: 10px; }
+.gauge > div { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 6px; transition: width .8s cubic-bezier(.22,.8,.3,1); }
+.gauge > div::after { content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); background-size: 60px 100%; background-repeat: no-repeat;
+  animation: sheen 1.8s linear infinite; opacity: .7; }
+@keyframes sheen { from { background-position: -60px 0; } to { background-position: calc(100% + 60px) 0; } }
+.cheer .big { animation: bump .6s cubic-bezier(.3,1.6,.5,1); }
+.cheer .gauge { animation: glow 1.1s ease-out; }
+@keyframes bump { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
+@keyframes glow { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--done) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+.wk-card.cheer .gauge { animation-name: glowb; }
+@keyframes glowb { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--week) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+
+ul.list { list-style: none; margin: 0; padding: 0; display: grid; }
+.item { display: flex; align-items: center; gap: 6px; min-height: 48px; border-bottom: 1px solid var(--line); min-width: 0; }
+.item:last-child { border-bottom: 0; }
+.ckwrap { display: grid; place-items: center; width: 44px; height: 44px; flex: none; margin-left: -8px; }
+.ck { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--line-strong);
+  background: var(--surface); display: grid; place-content: center; margin: 0; transition: background-color .2s, border-color .2s; }
+.ck::after { content: ""; width: 11px; height: 6px; border-left: 2.5px solid var(--on-done); border-bottom: 2.5px solid var(--on-done);
+  transform: translateY(-1px) rotate(-45deg) scale(0); transition: transform .2s ease; }
+.ck:checked { background: var(--done); border-color: var(--done); }
+.ck:checked::after { transform: translateY(-1px) rotate(-45deg) scale(1); }
+.wk .ck:checked { background: var(--week); border-color: var(--week); }
+.ck.pop { animation: pop .4s cubic-bezier(.3,1.7,.5,1); }
+.ck.pop:checked::after { animation: draw .3s ease .05s both; }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.28); } 100% { transform: scale(1); } }
+@keyframes draw { from { transform: translateY(-1px) rotate(-45deg) scale(0); } to { transform: translateY(-1px) rotate(-45deg) scale(1); } }
+.item .t { flex: 1; min-width: 0; overflow-wrap: anywhere; background: none; border: 0; text-align: left; padding: 8px 0; transition: color .3s; }
+.item.done .t { color: var(--muted); text-decoration: line-through; }
+.item .t.fixed { cursor: default; }
+input.edit { flex: 1; min-width: 0; border: 1px solid var(--week); border-radius: 8px; padding: 6px 8px; background: var(--surface); font-size: 16px; }
+.tag { font-size: 0.7rem; border-radius: 999px; padding: 0 8px; flex: none; color: var(--done); border: 1px solid color-mix(in srgb, var(--done) 45%, var(--line)); }
+.wk .tag { color: var(--week); border-color: color-mix(in srgb, var(--week) 45%, var(--line)); }
+.x { border: 0; background: none; color: var(--muted); min-width: 40px; height: 40px; border-radius: 8px; flex: none; font-size: 1.15rem; line-height: 1; }
+.x.confirm { padding: 0 10px; font-size: 0.8rem; font-weight: 600; color: #fff; background: var(--warn); height: 32px; }
+.empty { color: var(--muted); font-size: 0.88rem; padding: 10px 0; }
+.add { display: flex; gap: 8px; margin-top: 10px; }
+.add input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--sunken); font-size: 16px; }
+.primary { border: 0; border-radius: 10px; padding: 9px 16px; background: var(--ink); color: var(--surface); font-weight: 700; font-size: 0.92rem; white-space: nowrap; }
+.carry { margin-top: 8px; border: 1px dashed var(--line-strong); background: none; border-radius: 10px; padding: 9px 12px; font-size: 0.85rem; color: var(--muted); width: 100%; text-align: left; }
+
+/* recurring settings */
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--sunken); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; }
+.seg button { border: 0; background: none; border-radius: 8px; padding: 7px 0; font-size: 0.88rem; color: var(--muted); font-weight: 600; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.newrec { display: grid; gap: 10px; padding: 12px; border-radius: 12px; background: var(--sunken); border: 1px solid var(--line); margin-top: 12px; }
+.newrec .add { margin: 0; }
+.newrec .add input { background: var(--surface); }
+.chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; min-width: 36px; min-height: 34px; padding: 2px 6px; font-size: 0.85rem; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--done); border-color: var(--done); color: var(--on-done); font-weight: 700; }
+.chips.sm .chip { min-width: 30px; min-height: 30px; font-size: 0.78rem; padding: 0 4px; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.preset { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-size: 0.82rem; }
+.hint { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.rec { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rec:last-child { border-bottom: 0; }
+.rec .t { min-width: 0; overflow-wrap: anywhere; background: none; border: 0; padding: 0; text-align: left; font-weight: 600; }
+.rec .chips { grid-column: 1; }
+.rec .x { grid-row: 1 / span 2; grid-column: 2; }
+.rec.wkrec .x { grid-row: 1; }
+.note { font-size: 0.8rem; color: var(--muted); margin: 12px 0 0; }
+.backup { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* tab bar */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(3, 1fr);
+  background: color-mix(in srgb, var(--surface) 90%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.tabbar button { height: var(--tabbar); border: 0; background: none; display: grid; place-items: center; align-content: center; gap: 2px; font-size: 0.7rem; color: var(--muted); }
+.tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tabbar button[aria-selected="true"] { color: var(--done); font-weight: 700; }
+
+.toast { position: fixed; left: 50%; bottom: calc(var(--tabbar) + env(safe-area-inset-bottom, 0px) + 14px); transform: translate(-50%, 20px);
+  background: var(--ink); color: var(--surface); padding: 9px 16px; border-radius: 999px; font-size: 0.85rem; opacity: 0; pointer-events: none;
+  transition: opacity .25s, transform .25s; z-index: 40; max-width: calc(100% - 32px); text-align: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="in">
+    <h1>목표 캘린더</h1>
+    <div class="todaychip" aria-live="polite"><span>오늘</span><div class="ring" id="todayRing"></div><b class="num" id="todayPct">–</b></div>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="pane" data-pane="cal" aria-label="캘린더">
+    <div class="card">
+      <div class="cal-head">
+        <h2 id="monthTitle" class="num"></h2>
+        <div class="navs">
+          <button class="btn icon" id="prevM" aria-label="이전 달">‹</button>
+          <button class="btn" id="todayBtn">오늘</button>
+          <button class="btn icon" id="nextM" aria-label="다음 달">›</button>
+        </div>
+      </div>
+      <div class="dow"><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div><div>일</div></div>
+      <div class="weeks" id="weeks"></div>
+      <div class="stats">
+        <div class="stat"><b id="avg" class="num">–</b><span>이번 달 평균 달성률</span></div>
+        <div class="stat"><b id="full" class="num">0일</b><span>100% 채운 날</span></div>
+        <div class="legend" aria-hidden="true">0%
+          <i style="background: var(--surface)"></i>
+          <i style="background: color-mix(in srgb, var(--done) 18%, var(--surface))"></i>
+          <i style="background: color-mix(in srgb, var(--done) 36%, var(--surface))"></i>
+          <i style="background: color-mix(in srgb, var(--done) 54%, var(--surface))"></i>
+          <i style="background: var(--done)"></i>100%
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="side">
+    <section class="pane active" data-pane="today" aria-label="목표">
+      <div class="card" id="dayCard">
+        <div class="panel-head">
+          <div><h2 id="dayTitle"></h2><div class="sub">일간 목표</div></div>
+          <span class="big day num" id="dayPct">–</span>
+        </div>
+        <div class="gauge"><div id="dayBar" style="background: var(--done)"></div></div>
+        <ul class="list" id="dayList"></ul>
+        <button class="carry" id="dayCarry" hidden></button>
+        <form class="add" id="dayAdd">
+          <input id="dayInput" placeholder="이날만 할 일 추가" autocomplete="off" enterkeyhint="done" aria-label="이날만 할 일">
+          <button class="primary" type="submit">추가</button>
+        </form>
+      </div>
+
+      <div class="card wk-card" id="weekCard">
+        <div class="panel-head">
+          <div><h2 id="weekTitle"></h2><div class="sub num" id="weekRange"></div></div>
+          <span class="big week num" id="weekPct">–</span>
+        </div>
+        <div class="gauge"><div id="weekBar" style="background: var(--week)"></div></div>
+        <ul class="list" id="weekList"></ul>
+        <button class="carry" id="weekCarry" hidden></button>
+        <form class="add" id="weekAdd">
+          <input id="weekInput" placeholder="이번 주만 할 목표 추가" autocomplete="off" enterkeyhint="done" aria-label="이번 주 목표">
+          <button class="primary" type="submit">추가</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="pane" data-pane="settings" aria-label="설정">
+      <div class="card">
+        <h2>반복 목표 설정</h2>
+        <div class="sub">한 번 정해 두면 매일 다시 적지 않아도 자동으로 들어가요</div>
+        <form class="newrec" id="recAdd">
+          <div class="seg" role="group" aria-label="반복 종류">
+            <button type="button" id="kindDaily" aria-pressed="true">요일마다 (일간)</button>
+            <button type="button" id="kindWeekly" aria-pressed="false">매주 (주간)</button>
+          </div>
+          <div class="add">
+            <input id="recInput" placeholder="예: 영어 단어 30개" autocomplete="off" enterkeyhint="done" aria-label="반복 목표 이름">
+            <button class="primary" type="submit">추가</button>
+          </div>
+          <div id="dailyOpts" style="display: grid; gap: 8px;">
+            <div class="presets">
+              <button type="button" class="preset" data-preset="all">매일</button>
+              <button type="button" class="preset" data-preset="wk">평일</button>
+              <button type="button" class="preset" data-preset="we">주말</button>
+            </div>
+            <div id="newDays"></div>
+          </div>
+          <p class="hint" id="weeklyHint" hidden>매주 주간 목표에 자동으로 들어가요. 그 주 안에 끝내면 체크하면 돼요.</p>
+        </form>
+        <h3>일간 반복 목표</h3>
+        <div id="recList"></div>
+        <h3>주간 반복 목표</h3>
+        <div id="wrecList"></div>
+        <p class="note">바꾸거나 지워도 오늘(주간 목표는 이번 주)부터 적용돼요. 지난 기록과 달성률은 그대로 남아요.</p>
+      </div>
+
+      <div class="card">
+        <h2>백업</h2>
+        <div class="sub">기록은 이 폰에만 저장돼요. 폰을 바꾸거나 다른 기기에서 쓰려면 백업 파일로 옮기세요.</div>
+        <div class="backup">
+          <button class="btn" id="exportBtn" type="button">백업 파일 저장</button>
+          <button class="btn" id="importBtn" type="button">백업 불러오기</button>
+          <input type="file" id="importFile" accept="application/json,.json" hidden>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="화면">
+  <button role="tab" data-tab="today" aria-selected="true">
+    <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12.2l2.4 2.4 4.8-5"/></svg>목표</button>
+  <button role="tab" data-tab="cal" aria-selected="false">
+    <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>캘린더</button>
+  <button role="tab" data-tab="settings" aria-selected="false">
+    <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>반복 설정</button>
+</nav>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  // ---------- helpers ----------
+  const $ = (id) => document.getElementById(id);
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "text") el.textContent = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of kids.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return el;
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return ymd(d); };
+  const today = () => ymd(new Date());
+  const mondayOf = (s) => { const d = parse(s); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return ymd(d); };
+  const wd = (s) => parse(s).getDay();
+  const mKey = (s) => s.slice(0, 7);
+  const addMonths = (mk, n) => { const [y, m] = mk.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
+  const newId = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-5);
+  const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  const ORDER = [1, 2, 3, 4, 5, 6, 0];
+  const md = (s) => { const d = parse(s); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const wide = matchMedia("(min-width: 920px)");
+
+  // ---------- animation ----------
+  const ease = (k) => 1 - Math.pow(1 - k, 3);
+  function tween(obj, to, dur, onFrame) {
+    cancelAnimationFrame(obj._raf);
+    const from = obj._cur ?? to;
+    if (reduceMotion || from === to) { obj._cur = to; onFrame(to, true); return; }
+    const t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / dur);
+      obj._cur = from + (to - from) * ease(k);
+      onFrame(obj._cur, k === 1);
+      if (k < 1) obj._raf = requestAnimationFrame(step);
+    };
+    obj._raf = requestAnimationFrame(step);
+  }
+  // number that counts up/down instead of jumping
+  function countTo(el, to) {
+    if (to == null) { cancelAnimationFrame(el._raf); el._cur = null; el.textContent = "–"; return; }
+    if (el._cur == null) el._cur = 0;
+    tween(el, to, 800, (v) => { el.textContent = Math.round(v) + "%"; });
+  }
+
+  // ---------- state ----------
+  const S = {
+    settings: { recurring: [], weekly: [] },
+    months: {},
+    view: mKey(today()),
+    sel: today(),
+    tab: "today",
+    editing: null,
+    confirm: null,
+    pop: null,
+    newKind: "daily",
+    newDays: [0, 1, 2, 3, 4, 5, 6],
+  };
+  const KEY = "goal-calendar:v1";
+  const normSettings = (d) => ({
+    recurring: Array.isArray(d?.recurring) ? d.recurring : [],
+    weekly: Array.isArray(d?.weekly) ? d.weekly : [],
+  });
+  const month = (mk) => S.months[mk] || (S.months[mk] = { days: {}, weeks: {} });
+  const peekDay = (ds) => S.months[mKey(ds)]?.days?.[ds];
+  function day(ds) { const m = month(mKey(ds)); m.days ||= {}; const d = m.days[ds] || (m.days[ds] = {}); d.done ||= {}; d.extra ||= []; return d; }
+  const peekWeek = (mon) => S.months[mKey(mon)]?.weeks?.[mon];
+  function week(mon) { const m = month(mKey(mon)); m.weeks ||= {}; const w = m.weeks[mon] || (m.weeks[mon] = {}); w.items ||= []; w.done ||= {}; return w; }
+
+  function load() {
+    try {
+      const d = JSON.parse(localStorage.getItem(KEY) || "null");
+      if (d) { S.settings = normSettings(d.settings); S.months = d.months && typeof d.months === "object" ? d.months : {}; }
+    } catch (e) {}
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify({ v: 1, settings: S.settings, months: S.months })); }
+    catch (e) { toast("저장하지 못했어요. 폰의 저장 공간을 확인해 주세요"); }
+    render();
+  }
+  let toastT;
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2600); }
+
+  // ---------- goal logic ----------
+  function versionAt(g, ds) { let v = null; for (const x of g.versions || []) if (x.from <= ds) v = x; return v; }
+  function applies(g, ds) {
+    if (ds < g.created) return false;
+    if (g.deleted && ds >= g.deleted) return false;
+    const v = versionAt(g, ds);
+    return !!v && v.days.includes(wd(ds));
+  }
+  const wApplies = (g, mon) => mon >= g.created && (!g.deleted || mon < g.deleted);
+  function dayItems(ds) {
+    const d = peekDay(ds); const done = d?.done || {};
+    return [
+      ...S.settings.recurring.filter((g) => applies(g, ds)).map((g) => ({ kind: "rec", id: g.id, title: g.title, done: !!done[g.id] })),
+      ...(d?.extra || []).map((x) => ({ kind: "extra", id: x.id, title: x.title, done: !!x.done })),
+    ];
+  }
+  function weekItems(mon) {
+    const w = peekWeek(mon); const done = w?.done || {};
+    return [
+      ...S.settings.weekly.filter((g) => wApplies(g, mon)).map((g) => ({ kind: "wrec", id: g.id, title: g.title, done: !!done[g.id] })),
+      ...(w?.items || []).map((x) => ({ kind: "witem", id: x.id, title: x.title, done: !!x.done })),
+    ];
+  }
+  const ratio = (it) => (it.length ? Math.round((it.filter((i) => i.done).length * 100) / it.length) : null);
+  const dayPct = (ds) => (ds > today() ? null : ratio(dayItems(ds)));
+  const weekPct = (mon) => (mon > mondayOf(today()) ? null : ratio(weekItems(mon)));
+
+  // ---------- actions ----------
+  function toggle(kind, key, id) {
+    if (kind === "rec") { const d = day(key); if (d.done[id]) delete d.done[id]; else d.done[id] = true; }
+    else if (kind === "extra") { const x = day(key).extra.find((e) => e.id === id); if (x) x.done = !x.done; }
+    else if (kind === "wrec") { const w = week(key); if (w.done[id]) delete w.done[id]; else w.done[id] = true; }
+    else if (kind === "witem") { const x = week(key).items.find((e) => e.id === id); if (x) x.done = !x.done; }
+    S.pop = kind + key + id;
+    save();
+  }
+  function addRec(title) {
+    const t = today();
+    if (S.newKind === "weekly") S.settings.weekly.push({ id: newId(), title, created: mondayOf(t), deleted: null });
+    else {
+      if (!S.newDays.length) { toast("요일을 하나 이상 골라 주세요"); return false; }
+      S.settings.recurring.push({ id: newId(), title, created: t, deleted: null, versions: [{ from: t, days: [...S.newDays].sort() }] });
+    }
+    save(); toast(S.newKind === "weekly" ? "주간 반복 목표를 추가했어요" : "일간 반복 목표를 추가했어요");
+    return true;
+  }
+  function setRecDays(g, days) {
+    if (!days.length) { toast("요일을 하나 이상 남겨 주세요"); return; }
+    const t = today(); days = [...days].sort();
+    if (g.created >= t) g.versions = [{ from: g.created, days }];
+    else { const last = g.versions[g.versions.length - 1]; if (last.from === t) last.days = days; else g.versions.push({ from: t, days }); }
+    save();
+  }
+  function deleteRec(g) {
+    const t = today();
+    if (g.created >= t) S.settings.recurring = S.settings.recurring.filter((x) => x.id !== g.id); else g.deleted = t;
+    save();
+  }
+  function deleteWRec(g) {
+    const mon = mondayOf(today());
+    if (g.created >= mon) S.settings.weekly = S.settings.weekly.filter((x) => x.id !== g.id); else g.deleted = mon;
+    save();
+  }
+  function commitEdit() {
+    const e = S.editing; if (!e) return;
+    S.editing = null;
+    const v = e.value.trim();
+    if (v) {
+      let target = null;
+      if (e.kind === "rec") target = S.settings.recurring.find((x) => x.id === e.id);
+      else if (e.kind === "wrec") target = S.settings.weekly.find((x) => x.id === e.id);
+      else if (e.kind === "extra") target = day(e.key).extra.find((x) => x.id === e.id);
+      else if (e.kind === "witem") target = week(e.key).items.find((x) => x.id === e.id);
+      if (target && target.title !== v) { target.title = v; save(); return; }
+    }
+    render();
+  }
+
+  // ---------- render ----------
+  let rendering = false;
+  function titleNode(kind, id, key, title, editable) {
+    if (!editable) return h("span", { class: "t fixed", text: title });
+    const e = S.editing;
+    if (e && e.kind === kind && e.id === id && e.key === key) {
+      const inp = h("input", { class: "edit", value: e.value, "aria-label": "이름 고치기", id: "edit-field", enterkeyhint: "done" });
+      inp.addEventListener("input", () => { e.value = inp.value; });
+      inp.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") { ev.preventDefault(); commitEdit(); }
+        if (ev.key === "Escape") { S.editing = null; render(); }
+      });
+      inp.addEventListener("blur", () => { if (!rendering) commitEdit(); });
+      return inp;
+    }
+    return h("button", { class: "t", type: "button", text: title, title: "눌러서 고치기",
+      onclick: () => { S.editing = { kind, id, key, value: title }; render(); } });
+  }
+  function delBtn(cid, onDel, label) {
+    const armed = S.confirm === cid;
+    return h("button", { class: "x" + (armed ? " confirm" : ""), type: "button", "aria-label": armed ? "삭제 확인" : label, text: armed ? "삭제" : "×",
+      onclick: () => {
+        if (armed) { S.confirm = null; onDel(); return; }
+        S.confirm = cid; render();
+        setTimeout(() => { if (S.confirm === cid) { S.confirm = null; render(); } }, 3500);
+      } });
+  }
+  function itemRow(it, key, cls, onDelete) {
+    const cb = h("input", { type: "checkbox", class: "ck" + (S.pop === it.kind + key + it.id ? " pop" : ""), "aria-label": it.title + " 완료" });
+    cb.checked = it.done;
+    cb.addEventListener("change", () => toggle(it.kind, key, it.id));
+    const recurring = it.kind === "rec" || it.kind === "wrec";
+    return h("li", { class: "item " + cls + (it.done ? " done" : "") },
+      h("label", { class: "ckwrap" }, cb),
+      titleNode(it.kind, it.id, key, it.title, !recurring),
+      recurring ? h("span", { class: "tag", text: "반복" }) : delBtn("x" + key + it.id, onDelete, "지우기"));
+  }
+
+  // calendar values last shown on screen, so changes animate when the calendar comes into view
+  const shown = { cell: {}, week: {} };
+  const calVisible = () => wide.matches || S.tab === "cal";
+
+  function renderCalendar() {
+    const t = today(), vis = calVisible();
+    const [y, m] = S.view.split("-").map(Number);
+    $("monthTitle").textContent = `${y}년 ${m}월`;
+    const first = `${S.view}-01`, last = ymd(new Date(y, m, 0));
+    const after = [];
+    const weeks = [];
+    for (let mon = mondayOf(first); mon <= last; mon = addDays(mon, 7)) {
+      const row = h("div", { class: "row" });
+      for (let i = 0; i < 7; i++) {
+        const ds = addDays(mon, i);
+        const p = dayPct(ds);
+        const cnt = dayItems(ds).length;
+        const cls = ["cell"];
+        if (mKey(ds) !== S.view) cls.push("out");
+        if (ds === t) cls.push("today");
+        if (ds === S.sel) cls.push("sel");
+        let label = md(ds);
+        const v = h("span", { class: "v num" });
+        const cell = h("button", { class: cls.join(" "), type: "button", onclick: () => select(ds, true) },
+          h("span", { class: "d num", text: parse(ds).getDate() }), v);
+        if (p != null) {
+          label += `, 달성률 ${p}%`;
+          const prev = vis ? (shown.cell[ds] ?? p) : p;
+          const paint = (val, end) => {
+            const r = Math.round(val);
+            v.textContent = r + "%";
+            cell.style.setProperty("--p", Math.min(r, 99));
+            cell.classList.toggle("full", end && p === 100);
+          };
+          paint(prev, prev === p);
+          if (prev !== p) { const o = { _cur: prev }; after.push(() => tween(o, p, 800, paint)); }
+          if (vis) shown.cell[ds] = p;
+        } else if (ds > t && cnt) {
+          v.classList.add("muted"); v.textContent = cnt + "개"; label += `, 목표 ${cnt}개`;
+        }
+        cell.setAttribute("aria-label", label);
+        row.append(cell);
+      }
+      const wp = weekPct(mon);
+      const fill = h("div", { class: "fill" });
+      const prevW = vis ? (shown.week[mon] ?? wp ?? 0) : (wp ?? 0);
+      fill.style.width = prevW + "%";
+      if ((wp ?? 0) !== prevW) after.push(() => { fill.style.width = (wp ?? 0) + "%"; });
+      if (vis) shown.week[mon] = wp ?? 0;
+      const lbl = h("span", { class: "lbl num" });
+      if (wp != null) { const o = { _cur: vis ? (shown.week["l" + mon] ?? wp) : wp }; after.push(() => tween(o, wp, 800, (x) => { lbl.textContent = `주간 ${Math.round(x)}%`; })); if (vis) shown.week["l" + mon] = wp; }
+      weeks.push(h("div", { class: "week" }, row,
+        h("div", { class: "wbar", "aria-label": wp == null ? "주간 목표 없음" : `주간 달성률 ${wp}%` }, h("div", { class: "track" }, fill), lbl)));
+    }
+    $("weeks").replaceChildren(...weeks);
+    void $("weeks").offsetWidth; // commit start values so the transitions run
+    after.forEach((f) => f());
+
+    let sum = 0, n = 0, full = 0;
+    for (let ds = first; ds <= last && ds <= t; ds = addDays(ds, 1)) {
+      const p = dayPct(ds); if (p == null) continue;
+      sum += p; n++; if (p === 100) full++;
+    }
+    countTo($("avg"), n ? Math.round(sum / n) : null);
+    $("full").textContent = full + "일";
+  }
+
+  const last = { day: null, week: null };
+  function cheer(card, prev, p, sameKey) {
+    if (sameKey && prev != null && prev < 100 && p === 100) {
+      card.classList.remove("cheer"); void card.offsetWidth; card.classList.add("cheer");
+    }
+  }
+  function renderDay() {
+    const ds = S.sel, t = today();
+    $("dayTitle").textContent = `${md(ds)} ${DOW[wd(ds)]}요일` + (ds === t ? " · 오늘" : "");
+    const items = dayItems(ds);
+    const p = ratio(items);
+    countTo($("dayPct"), p);
+    $("dayBar").style.width = (p || 0) + "%";
+    cheer($("dayCard"), last.day?.p, p, last.day?.ds === ds);
+    last.day = { ds, p };
+    const list = items.map((it) => itemRow(it, ds, "", () => { const d = day(ds); d.extra = d.extra.filter((e) => e.id !== it.id); save(); }));
+    $("dayList").replaceChildren(...(list.length ? list : [h("li", { class: "empty", text:
+      S.settings.recurring.some((g) => !g.deleted) ? "이날은 정해진 반복 목표가 없어요. 아래에서 이날만 할 일을 추가할 수 있어요."
+        : "반복 설정 탭에서 목표를 추가하면 정한 요일마다 여기에 자동으로 들어가요." })]));
+
+    const have = new Set((peekDay(ds)?.extra || []).map((x) => x.title));
+    const left = (peekDay(addDays(ds, -1))?.extra || []).filter((x) => !x.done && !have.has(x.title));
+    const c = $("dayCarry");
+    c.hidden = !left.length;
+    c.textContent = `+ 전날 못 끝낸 일 ${left.length}개 가져오기`;
+    c.onclick = () => { const d = day(ds); for (const x of left) d.extra.push({ id: newId(), title: x.title, done: false }); save(); };
+  }
+  function renderWeek() {
+    const mon = mondayOf(S.sel), sun = addDays(mon, 6);
+    const thu = parse(addDays(mon, 3));
+    $("weekTitle").textContent = `${thu.getMonth() + 1}월 ${Math.ceil(thu.getDate() / 7)}째 주 목표`;
+    const a = parse(mon), b = parse(sun);
+    $("weekRange").textContent = `${a.getMonth() + 1}/${a.getDate()} – ${b.getMonth() + 1}/${b.getDate()}`;
+    const items = weekItems(mon);
+    const p = ratio(items);
+    countTo($("weekPct"), p);
+    $("weekBar").style.width = (p || 0) + "%";
+    cheer($("weekCard"), last.week?.p, p, last.week?.mon === mon);
+    last.week = { mon, p };
+    const list = items.map((it) => itemRow(it, mon, "wk", () => { const w = week(mon); w.items = w.items.filter((e) => e.id !== it.id); save(); }));
+    $("weekList").replaceChildren(...(list.length ? list : [h("li", { class: "empty", text: "반복 설정에서 주간 반복 목표를 정하거나, 이번 주만 할 목표를 아래에 적어 보세요." })]));
+
+    const have = new Set(items.map((x) => x.title));
+    const left = (peekWeek(addDays(mon, -7))?.items || []).filter((x) => !x.done && !have.has(x.title));
+    const c = $("weekCarry");
+    c.hidden = !left.length;
+    c.textContent = `+ 지난주 못 끝낸 목표 ${left.length}개 가져오기`;
+    c.onclick = () => { const w = week(mon); for (const x of left) w.items.push({ id: newId(), title: x.title, done: false }); save(); };
+  }
+  function dayChips(selected, onToggle, small) {
+    return h("div", { class: "chips" + (small ? " sm" : ""), role: "group", "aria-label": "요일" },
+      ORDER.map((d) => h("button", { type: "button", class: "chip", "aria-pressed": selected.includes(d) ? "true" : "false", text: DOW[d], onclick: () => onToggle(d) })));
+  }
+  function renderSettings() {
+    const t = today();
+    const recs = S.settings.recurring.filter((g) => !g.deleted);
+    $("recList").replaceChildren(...(recs.length ? recs.map((g) => {
+      const v = versionAt(g, t) || g.versions[g.versions.length - 1];
+      const days = v ? v.days : [];
+      return h("div", { class: "rec" },
+        titleNode("rec", g.id, "set", g.title, true),
+        delBtn("r" + g.id, () => deleteRec(g), g.title + " 지우기"),
+        dayChips(days, (d) => setRecDays(g, days.includes(d) ? days.filter((x) => x !== d) : [...days, d]), true));
+    }) : [h("div", { class: "empty", text: "아직 없어요. 위에서 '요일마다'를 골라 추가해 보세요." })]));
+    const wrecs = S.settings.weekly.filter((g) => !g.deleted);
+    $("wrecList").replaceChildren(...(wrecs.length ? wrecs.map((g) =>
+      h("div", { class: "rec wkrec" }, titleNode("wrec", g.id, "set", g.title, true), delBtn("w" + g.id, () => deleteWRec(g), g.title + " 지우기"))
+    ) : [h("div", { class: "empty", text: "아직 없어요. 위에서 '매주'를 골라 추가해 보세요." })]));
+
+    const weekly = S.newKind === "weekly";
+    $("kindDaily").setAttribute("aria-pressed", String(!weekly));
+    $("kindWeekly").setAttribute("aria-pressed", String(weekly));
+    $("dailyOpts").style.display = weekly ? "none" : "grid";
+    $("weeklyHint").hidden = !weekly;
+    $("recInput").placeholder = weekly ? "예: 책 한 권 읽기" : "예: 영어 단어 30개";
+    $("newDays").replaceChildren(dayChips(S.newDays, (d) => {
+      S.newDays = S.newDays.includes(d) ? S.newDays.filter((x) => x !== d) : [...S.newDays, d];
+      renderSettings();
+    }));
+  }
+  function renderHeader() {
+    const p = dayPct(today());
+    countTo($("todayPct"), p);
+    const ring = $("todayRing");
+    tween(ring, p ?? 0, 800, (v) => ring.style.setProperty("--p", v));
+  }
+  function renderTabs() {
+    document.querySelectorAll(".pane").forEach((el) => el.classList.toggle("active", el.dataset.pane === S.tab));
+    document.querySelectorAll(".tabbar button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === S.tab)));
+  }
+  function render() {
+    rendering = true;
+    try { renderTabs(); renderCalendar(); renderDay(); renderWeek(); renderSettings(); renderHeader(); }
+    finally { rendering = false; S.pop = null; }
+    const f = $("edit-field");
+    if (f && document.activeElement !== f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+  }
+  function select(ds, fromCalendar) {
+    S.sel = ds; S.editing = null;
+    if (mKey(ds) !== S.view) S.view = mKey(ds);
+    if (fromCalendar && !wide.matches) { S.tab = "today"; window.scrollTo(0, 0); }
+    render();
+  }
+
+  // ---------- static controls ----------
+  $("prevM").onclick = () => { S.view = addMonths(S.view, -1); render(); };
+  $("nextM").onclick = () => { S.view = addMonths(S.view, 1); render(); };
+  $("todayBtn").onclick = () => select(today(), false);
+  document.querySelectorAll(".tabbar button").forEach((b) => b.addEventListener("click", () => {
+    if (S.tab === b.dataset.tab) return;
+    S.tab = b.dataset.tab; S.editing = null; window.scrollTo(0, 0); render();
+  }));
+  $("dayAdd").addEventListener("submit", (e) => {
+    e.preventDefault(); const inp = $("dayInput"); const v = inp.value.trim(); if (!v) return;
+    day(S.sel).extra.push({ id: newId(), title: v, done: false }); inp.value = ""; save();
+  });
+  $("weekAdd").addEventListener("submit", (e) => {
+    e.preventDefault(); const inp = $("weekInput"); const v = inp.value.trim(); if (!v) return;
+    week(mondayOf(S.sel)).items.push({ id: newId(), title: v, done: false }); inp.value = ""; save();
+  });
+  $("recAdd").addEventListener("submit", (e) => {
+    e.preventDefault(); const inp = $("recInput"); const v = inp.value.trim();
+    if (!v) { inp.focus(); return; }
+    if (addRec(v)) inp.value = "";
+  });
+  $("kindDaily").onclick = () => { S.newKind = "daily"; renderSettings(); };
+  $("kindWeekly").onclick = () => { S.newKind = "weekly"; renderSettings(); };
+  document.querySelectorAll(".preset").forEach((b) => b.addEventListener("click", () => {
+    S.newDays = { all: [0, 1, 2, 3, 4, 5, 6], wk: [1, 2, 3, 4, 5], we: [0, 6] }[b.dataset.preset];
+    renderSettings();
+  }));
+
+  // backup
+  $("exportBtn").onclick = async () => {
+    const json = JSON.stringify({ app: "goal-calendar", v: 1, savedAt: new Date().toISOString(), settings: S.settings, months: S.months });
+    const name = `목표캘린더-백업-${today()}.json`;
+    const file = new File([json], name, { type: "application/json" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    const a = h("a", { href: URL.createObjectURL(file), download: name });
+    document.body.append(a); a.click(); a.remove();
+  };
+  let importArmed = false;
+  $("importBtn").onclick = () => {
+    if (!importArmed) {
+      importArmed = true; $("importBtn").textContent = "지금 기록을 덮어써요 · 계속";
+      setTimeout(() => { importArmed = false; $("importBtn").textContent = "백업 불러오기"; }, 4000);
+      return;
+    }
+    importArmed = false; $("importBtn").textContent = "백업 불러오기";
+    $("importFile").click();
+  };
+  $("importFile").addEventListener("change", async () => {
+    const f = $("importFile").files[0]; $("importFile").value = "";
+    if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (d?.app !== "goal-calendar" || !d.settings || !d.months) throw new Error("bad");
+      S.settings = normSettings(d.settings); S.months = d.months; save(); toast("백업을 불러왔어요");
+    } catch (e) { toast("목표 캘린더 백업 파일이 아니에요"); }
+  });
+
+  // refresh when the app comes back (the date may have changed)
+  let lastToday = today();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const t = today();
+    if (t !== lastToday) { if (S.sel === lastToday) { S.sel = t; S.view = mKey(t); } lastToday = t; }
+    render();
+  });
+  wide.addEventListener?.("change", render);
+
+  // iOS Safari ignores user-scalable=no, so block pinch zoom directly
+  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  // Mac trackpad pinch arrives as ctrl+wheel; also block Cmd/Ctrl + / - / 0
+  window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && ["+", "=", "-", "_", "0"].includes(e.key)) e.preventDefault();
+  });
+
+  load();
+  render();
+  try { navigator.storage?.persist?.(); } catch (e) {}
+  if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+</body>
+</html>
