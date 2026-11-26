@@ -30,10 +30,13 @@ export function flatten(state) {
   const out = new Map();
   putList(out, ["settings", "recurring"], state.settings.recurring);
   putList(out, ["settings", "weekly"], state.settings.weekly);
+  putList(out, ["settings", "schedules"], state.settings.schedules || []);
   for (const [mk, m] of Object.entries(state.months)) {
     for (const [key, d] of Object.entries(m.days || {})) {
       for (const id of Object.keys(d.done || {})) if (d.done[id]) out.set([mk, "days", key, "done", id].join(SEP), "true");
       putList(out, [mk, "days", key, "extra"], d.extra || []);
+      for (const id of Object.keys(d.sdone || {})) if (d.sdone[id]) out.set([mk, "days", key, "sdone", id].join(SEP), "true");
+      putList(out, [mk, "days", key, "events"], d.events || []);
     }
     for (const [key, w] of Object.entries(m.weeks || {})) {
       for (const id of Object.keys(w.done || {})) if (w.done[id]) out.set([mk, "weeks", key, "done", id].join(SEP), "true");
@@ -57,13 +60,14 @@ export function fromDocs(docs) {
     settings: {
       recurring: getList(st.recurring).filter((g) => Array.isArray(g.versions) && g.versions.length && typeof g.created === "string"),
       weekly: getList(st.weekly).filter((g) => typeof g.created === "string"),
+      schedules: getList(st.schedules).filter((g) => typeof g.from === "string" && (g.rep === "m" || g.rep === "y") && typeof g.day === "number"),
     },
     months: {},
   };
   for (const [mk, m] of Object.entries(docs)) {
     if (!/^\d{4}-\d{2}$/.test(mk)) continue;
     const month = (state.months[mk] = { days: {}, weeks: {} });
-    for (const [k, d] of Object.entries(isObj(m.days) ? m.days : {})) month.days[k] = { done: getDone(d.done), extra: getList(d.extra) };
+    for (const [k, d] of Object.entries(isObj(m.days) ? m.days : {})) month.days[k] = { done: getDone(d.done), extra: getList(d.extra), sdone: getDone(d.sdone), events: getList(d.events) };
     for (const [k, w] of Object.entries(isObj(m.weeks) ? m.weeks : {})) month.weeks[k] = { done: getDone(w.done), items: getList(w.items) };
   }
   return state;
@@ -192,7 +196,7 @@ async function onUser(u) {
       return;
     }
     GC.meta = null;
-    GC.replace({ settings: { recurring: [], weekly: [] }, months: {} });
+    GC.replace({ settings: { recurring: [], weekly: [], schedules: [] }, months: {} });
   }
   user = u;
   base = new Map(Object.entries((saved && saved.uid === u.uid && saved.base) || {}));
@@ -283,7 +287,7 @@ if (firebaseConfig) {
       if (!ready || inflight || unsent().size) { error = "아직 올리지 못한 기록이 있어서 로그아웃하지 않았어요. 인터넷 연결을 확인해 주세요."; paint(); return; }
       stop?.(); stop = null; user = null;
       GC.meta = null;
-      GC.replace({ settings: { recurring: [], weekly: [] }, months: {} });
+      GC.replace({ settings: { recurring: [], weekly: [], schedules: [] }, months: {} });
       await fb.A.signOut(fb.auth);
       GC.toast("로그아웃했어요. 기록은 계정에 남아 있어요");
     } finally { $("logoutBtn").disabled = false; paint(); }

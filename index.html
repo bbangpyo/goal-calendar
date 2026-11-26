@@ -110,7 +110,7 @@ header.top h1 { margin: 0; font-size: 1.2rem; font-weight: 700; letter-spacing: 
 .row { gap: 0; }
 .cell {
   min-height: 60px; border: 0; border-radius: 0; background: var(--surface);
-  padding: 6px 0 5px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 4px;
+  padding: 6px 0 5px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; min-width: 0;
   transition: background-color .12s ease;
 }
 .cell + .cell { border-left: 1px solid var(--line); }
@@ -121,8 +121,16 @@ header.top h1 { margin: 0; font-size: 1.2rem; font-weight: 700; letter-spacing: 
   background: conic-gradient(var(--done) calc(var(--p) * 1%), var(--track) 0);
   -webkit-mask: radial-gradient(circle, transparent 5.5px, #000 6.5px); mask: radial-gradient(circle, transparent 5.5px, #000 6.5px); }
 .cnt { font-size: 0.62rem; color: var(--muted); height: 18px; display: grid; place-items: center; }
+/* schedule titles inside a day: at most two short lines, the rest as +N */
+.row.has-ev .cell { min-height: 92px; }
+.evs { display: grid; gap: 2px; width: 100%; padding: 0 2px; margin-top: auto; }
+.ev { font-size: 0.6rem; line-height: 1.35; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--sunken); border-radius: 3px; padding: 0 3px; color: var(--ink); }
+.ev.done { color: var(--muted); text-decoration: line-through; background: none; }
+.ev.late { color: var(--warn); }
+.ev.more { background: none; color: var(--muted); padding: 0; text-align: center; }
 .cell.out { color: var(--muted); }
-.cell.out .d, .cell.out .rg { opacity: 0.5; }
+.cell.out .d, .cell.out .rg, .cell.out .evs { opacity: 0.5; }
 .cell.today .d { background: var(--today); color: var(--on-today); }
 .cell.sel { box-shadow: inset 0 0 0 2px var(--sel); }
 .wbar { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-top: 1px solid var(--line); }
@@ -134,7 +142,7 @@ header.top h1 { margin: 0; font-size: 1.2rem; font-weight: 700; letter-spacing: 
 .stat b { font-size: 1.3rem; font-weight: 700; }
 .stat span { font-size: 0.75rem; color: var(--muted); }
 .legend { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 0.7rem; color: var(--muted); }
-@media (min-width: 520px) { .cell { min-height: 68px; } .cell .d { font-size: .9rem; } .rg { width: 20px; height: 20px; } .wbar .lbl { min-width: 62px; font-size: .7rem; } }
+@media (min-width: 520px) { .cell { min-height: 68px; } .row.has-ev .cell { min-height: 100px; } .ev { font-size: .68rem; } .cell .d { font-size: .9rem; } .rg { width: 20px; height: 20px; } .wbar .lbl { min-width: 62px; font-size: .7rem; } }
 
 /* goal cards */
 .panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -181,6 +189,14 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
 .add input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--sunken); font-size: 16px; }
 .primary { border: 0; border-radius: 10px; padding: 9px 16px; background: var(--ink); color: var(--surface); font-weight: 700; font-size: 0.92rem; white-space: nowrap; }
 .carry { margin-top: 8px; border: 1px dashed var(--line-strong); background: none; border-radius: 10px; padding: 9px 12px; font-size: 0.85rem; color: var(--muted); width: 100%; text-align: left; }
+
+/* schedules */
+.due { font-size: 0.72rem; font-weight: 700; flex: none; color: var(--muted); min-width: 3.2em; text-align: right; }
+.due.soon { color: var(--ink); }
+.due.late { color: var(--warn); }
+.item .when { font-size: 0.75rem; color: var(--muted); flex: none; }
+.add select { border: 1px solid var(--line); border-radius: 10px; padding: 9px 6px; background: var(--sunken); font-size: 16px; color: var(--ink); max-width: 42%; }
+.ev-card .ck:checked { background: var(--ink); border-color: var(--ink); }
 
 /* recurring settings */
 .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--sunken); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; }
@@ -267,6 +283,11 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
 
   <div class="side">
     <section class="pane active" data-pane="today" aria-label="목표">
+      <div class="card ev-card" id="upCard" hidden>
+        <div class="panel-head"><div><h2>다가오는 일정</h2><div class="sub">지난 일정과 7일 안의 일정</div></div></div>
+        <ul class="list" id="upList"></ul>
+      </div>
+
       <div class="card" id="dayCard">
         <div class="panel-head">
           <div><h2 id="dayTitle"></h2><div class="sub">일간 목표</div></div>
@@ -277,6 +298,16 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
         <button class="carry" id="dayCarry" hidden></button>
         <form class="add" id="dayAdd">
           <input id="dayInput" placeholder="이날만 할 일 추가" autocomplete="off" enterkeyhint="done" aria-label="이날만 할 일">
+          <button class="primary" type="submit">추가</button>
+        </form>
+      </div>
+
+      <div class="card ev-card" id="evCard">
+        <div class="panel-head"><div><h2 id="evTitle">일정</h2><div class="sub">마감일·예매·납부처럼 그날 할 일. 달성률에는 들어가지 않아요</div></div></div>
+        <ul class="list" id="evList"></ul>
+        <form class="add" id="evAdd">
+          <input id="evInput" placeholder="예: 월세 내기" autocomplete="off" enterkeyhint="done" aria-label="일정 이름">
+          <select id="evRep" aria-label="반복"></select>
           <button class="primary" type="submit">추가</button>
         </form>
       </div>
@@ -323,6 +354,8 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
         <div id="recList"></div>
         <h3>주간 반복 목표</h3>
         <div id="wrecList"></div>
+        <h3>반복 일정</h3>
+        <div id="srecList"></div>
         <p class="note">바꾸거나 지워도 오늘(주간 목표는 이번 주)부터 적용돼요. 지난 기록과 달성률은 그대로 남아요.</p>
       </div>
 
@@ -426,7 +459,7 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
 
   // ---------- state ----------
   const S = {
-    settings: { recurring: [], weekly: [] },
+    settings: { recurring: [], weekly: [], schedules: [] },
     months: {},
     view: mKey(today()),
     sel: today(),
@@ -441,10 +474,11 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   const normSettings = (d) => ({
     recurring: Array.isArray(d?.recurring) ? d.recurring : [],
     weekly: Array.isArray(d?.weekly) ? d.weekly : [],
+    schedules: Array.isArray(d?.schedules) ? d.schedules : [],
   });
   const month = (mk) => S.months[mk] || (S.months[mk] = { days: {}, weeks: {} });
   const peekDay = (ds) => S.months[mKey(ds)]?.days?.[ds];
-  function day(ds) { const m = month(mKey(ds)); m.days ||= {}; const d = m.days[ds] || (m.days[ds] = {}); d.done ||= {}; d.extra ||= []; return d; }
+  function day(ds) { const m = month(mKey(ds)); m.days ||= {}; const d = m.days[ds] || (m.days[ds] = {}); d.done ||= {}; d.extra ||= []; d.sdone ||= {}; d.events ||= []; return d; }
   const peekWeek = (mon) => S.months[mKey(mon)]?.weeks?.[mon];
   function week(mon) { const m = month(mKey(mon)); m.weeks ||= {}; const w = m.weeks[mon] || (m.weeks[mon] = {}); w.items ||= []; w.done ||= {}; return w; }
 
@@ -495,6 +529,22 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
       ...(w?.items || []).map((x) => ({ kind: "witem", id: x.id, title: x.title, done: !!x.done })),
     ];
   }
+  // schedules: one-off events live on their day; repeating ones (monthly / yearly) are rules in settings
+  const lastDay = (ds) => { const d = parse(ds); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+  function sApplies(g, ds) {
+    if (ds < g.from || (g.deleted && ds >= g.deleted)) return false;
+    const d = parse(ds), dd = Math.min(g.day, lastDay(ds)); // the 31st falls on the last day of shorter months
+    if (d.getDate() !== dd) return false;
+    return g.rep === "m" || (g.rep === "y" && d.getMonth() + 1 === g.month);
+  }
+  function evItems(ds) {
+    const d = peekDay(ds); const done = d?.sdone || {};
+    return [
+      ...S.settings.schedules.filter((g) => sApplies(g, ds)).map((g) => ({ kind: "srec", id: g.id, title: g.title, done: !!done[g.id], rep: g.rep })),
+      ...(d?.events || []).map((x) => ({ kind: "ev", id: x.id, title: x.title, done: !!x.done })),
+    ];
+  }
+  const repLabel = (it) => (it.rep === "m" ? "매달" : it.rep === "y" ? "매년" : "");
   const ratio = (it) => (it.length ? Math.round((it.filter((i) => i.done).length * 100) / it.length) : null);
   const dayPct = (ds) => (ds > today() ? null : ratio(dayItems(ds)));
   const weekPct = (mon) => (mon > mondayOf(today()) ? null : ratio(weekItems(mon)));
@@ -505,6 +555,8 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
     else if (kind === "extra") { const x = day(key).extra.find((e) => e.id === id); if (x) x.done = !x.done; }
     else if (kind === "wrec") { const w = week(key); if (w.done[id]) delete w.done[id]; else w.done[id] = true; }
     else if (kind === "witem") { const x = week(key).items.find((e) => e.id === id); if (x) x.done = !x.done; }
+    else if (kind === "srec") { const d = day(key); if (d.sdone[id]) delete d.sdone[id]; else d.sdone[id] = true; }
+    else if (kind === "ev") { const x = day(key).events.find((e) => e.id === id); if (x) x.done = !x.done; }
     S.pop = kind + key + id;
     save();
   }
@@ -535,6 +587,11 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
     if (g.created >= mon) S.settings.weekly = S.settings.weekly.filter((x) => x.id !== g.id); else g.deleted = mon;
     save();
   }
+  function deleteSched(g) {
+    const t = today();
+    if (g.from >= t) S.settings.schedules = S.settings.schedules.filter((x) => x.id !== g.id); else g.deleted = t;
+    save();
+  }
   function commitEdit() {
     const e = S.editing; if (!e) return;
     S.editing = null;
@@ -545,6 +602,8 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
       else if (e.kind === "wrec") target = S.settings.weekly.find((x) => x.id === e.id);
       else if (e.kind === "extra") target = day(e.key).extra.find((x) => x.id === e.id);
       else if (e.kind === "witem") target = week(e.key).items.find((x) => x.id === e.id);
+      else if (e.kind === "srec") target = S.settings.schedules.find((x) => x.id === e.id);
+      else if (e.kind === "ev") target = day(e.key).events.find((x) => x.id === e.id);
       if (target && target.title !== v) { target.title = v; save(); return; }
     }
     render();
@@ -577,15 +636,17 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
         setTimeout(() => { if (S.confirm === cid) { S.confirm = null; render(); } }, 3500);
       } });
   }
-  function itemRow(it, key, cls, onDelete) {
+  function itemRow(it, key, cls, onDelete, compact) {
     const cb = h("input", { type: "checkbox", class: "ck" + (S.pop === it.kind + key + it.id ? " pop" : ""), "aria-label": it.title + " 완료" });
     cb.checked = it.done;
     cb.addEventListener("change", () => toggle(it.kind, key, it.id));
-    const recurring = it.kind === "rec" || it.kind === "wrec";
+    const recurring = it.kind === "rec" || it.kind === "wrec" || it.kind === "srec";
+    const tail = compact ? (recurring ? h("span", { class: "tag", text: repLabel(it) || "반복" }) : null)
+      : recurring ? h("span", { class: "tag", text: repLabel(it) || "반복" }) : delBtn("x" + key + it.id, onDelete, "지우기");
     return h("li", { class: "item " + cls + (it.done ? " done" : "") },
       h("label", { class: "ckwrap" }, cb),
-      titleNode(it.kind, it.id, key, it.title, !recurring),
-      recurring ? h("span", { class: "tag", text: "반복" }) : delBtn("x" + key + it.id, onDelete, "지우기"));
+      titleNode(it.kind, it.id, key, it.title, !recurring && !compact),
+      tail);
   }
 
   // calendar values last shown on screen, so changes animate when the calendar comes into view
@@ -625,6 +686,16 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
           const c = h("span", { class: "cnt num" });
           if (ds > t && cnt) { c.textContent = cnt + "개"; label += `, 목표 ${cnt}개`; }
           cell.append(c);
+        }
+        const evs = evItems(ds);
+        if (evs.length) {
+          row.classList.add("has-ev");
+          const late = ds < t;
+          const show = evs.length > 2 ? evs.slice(0, 1) : evs;
+          const box = h("span", { class: "evs" }, show.map((e) => h("span", { class: "ev" + (e.done ? " done" : late ? " late" : ""), text: e.title })));
+          if (evs.length > show.length) box.append(h("span", { class: "ev more num", text: `+${evs.length - show.length}` }));
+          cell.append(box);
+          label += `, 일정 ${evs.map((e) => e.title).join(", ")}`;
         }
         cell.setAttribute("aria-label", label);
         row.append(cell);
@@ -680,6 +751,38 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
     c.textContent = `+ 전날 못 끝낸 일 ${left.length}개 가져오기`;
     c.onclick = () => { const d = day(ds); for (const x of left) d.extra.push({ id: newId(), title: x.title, done: false }); save(); };
   }
+  function dueTag(ds, t) {
+    const n = Math.round((parse(ds) - parse(t)) / 86400000);
+    if (n < 0) return h("span", { class: "due late num", text: `${-n}일 지남` });
+    return h("span", { class: "due num" + (n <= 3 ? " soon" : ""), text: n === 0 ? "오늘" : `D-${n}` });
+  }
+  function renderEvents() {
+    const ds = S.sel, t = today();
+    $("evTitle").textContent = ds === t ? "오늘 일정" : `${md(ds)} 일정`;
+    const items = evItems(ds);
+    $("evList").replaceChildren(...(items.length ? items.map((it) => {
+      const li = itemRow(it, ds, "", () => { const d = day(ds); d.events = d.events.filter((e) => e.id !== it.id); save(); });
+      return li;
+    }) : [h("li", { class: "empty", text: "이날 일정이 없어요." })]));
+    const d = parse(ds), dd = d.getDate();
+    const keep = $("evRep").value || "";
+    $("evRep").replaceChildren(
+      h("option", { value: "", text: "한 번" }),
+      h("option", { value: "m", text: `매달 ${dd}일` }),
+      h("option", { value: "y", text: `매년 ${d.getMonth() + 1}/${dd}` }));
+    $("evRep").value = keep;
+
+    // overdue (last 60 days, not done) and the next 7 days
+    const up = [];
+    for (let x = addDays(t, -60); x <= addDays(t, 7); x = addDays(x, 1))
+      for (const it of evItems(x)) if (x >= t || !it.done) up.push([x, it]);
+    $("upCard").hidden = !up.length;
+    $("upList").replaceChildren(...up.map(([x, it]) => {
+      const li = itemRow(it, x, "", () => { const dd2 = day(x); dd2.events = dd2.events.filter((e) => e.id !== it.id); save(); }, true);
+      li.append(h("span", { class: "when num", text: x === t ? "" : `${parse(x).getMonth() + 1}/${parse(x).getDate()}` }), dueTag(x, t));
+      return li;
+    }));
+  }
   function renderWeek() {
     const mon = mondayOf(S.sel), sun = addDays(mon, 6);
     const thu = parse(addDays(mon, 3));
@@ -722,6 +825,14 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
       h("div", { class: "rec wkrec" }, titleNode("wrec", g.id, "set", g.title, true), delBtn("w" + g.id, () => deleteWRec(g), g.title + " 지우기"))
     ) : [h("div", { class: "empty", text: "아직 없어요. 위에서 '매주'를 골라 추가해 보세요." })]));
 
+    const srecs = S.settings.schedules.filter((g) => !g.deleted);
+    $("srecList").replaceChildren(...(srecs.length ? srecs.map((g) =>
+      h("div", { class: "rec wkrec" },
+        h("div", { style: "display: grid; min-width: 0;" }, titleNode("srec", g.id, "set", g.title, true),
+          h("span", { class: "sub num", text: g.rep === "m" ? `매달 ${g.day}일` : `매년 ${g.month}월 ${g.day}일` })),
+        delBtn("s" + g.id, () => deleteSched(g), g.title + " 지우기"))
+    ) : [h("div", { class: "empty", text: "아직 없어요. 목표 탭의 일정에서 '매달'이나 '매년'을 골라 추가해 보세요." })]));
+
     const weekly = S.newKind === "weekly";
     $("kindDaily").setAttribute("aria-pressed", String(!weekly));
     $("kindWeekly").setAttribute("aria-pressed", String(weekly));
@@ -745,7 +856,7 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   }
   function render() {
     rendering = true;
-    try { renderTabs(); renderCalendar(); renderDay(); renderWeek(); renderSettings(); renderHeader(); }
+    try { renderTabs(); renderCalendar(); renderDay(); renderEvents(); renderWeek(); renderSettings(); renderHeader(); }
     finally { rendering = false; S.pop = null; }
     const f = $("edit-field");
     if (f && document.activeElement !== f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
@@ -768,6 +879,14 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   $("dayAdd").addEventListener("submit", (e) => {
     e.preventDefault(); const inp = $("dayInput"); const v = inp.value.trim(); if (!v) return;
     day(S.sel).extra.push({ id: newId(), title: v, done: false }); inp.value = ""; save();
+  });
+  $("evAdd").addEventListener("submit", (e) => {
+    e.preventDefault(); const inp = $("evInput"); const v = inp.value.trim(); if (!v) return;
+    const rep = $("evRep").value, d = parse(S.sel);
+    if (rep) S.settings.schedules.push({ id: newId(), title: v, from: S.sel, deleted: null, rep, day: d.getDate(), month: d.getMonth() + 1 });
+    else day(S.sel).events.push({ id: newId(), title: v, done: false });
+    inp.value = ""; $("evRep").value = ""; save();
+    if (rep) toast(rep === "m" ? `매달 ${d.getDate()}일에 넣었어요` : `매년 ${d.getMonth() + 1}월 ${d.getDate()}일에 넣었어요`);
   });
   $("weekAdd").addEventListener("submit", (e) => {
     e.preventDefault(); const inp = $("weekInput"); const v = inp.value.trim(); if (!v) return;
