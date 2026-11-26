@@ -205,6 +205,13 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
 .note { font-size: 0.8rem; color: var(--muted); margin: 12px 0 0; }
 .backup { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 
+.login { display: grid; gap: 8px; margin-top: 10px; max-width: 420px; }
+.login input { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--sunken); font-size: 16px; min-width: 0; }
+.primary:disabled, .btn:disabled { opacity: .5; }
+.textbtn { border: 0; background: none; color: var(--muted); font-size: .82rem; min-height: 36px; justify-self: start; padding: 0; text-decoration: underline; }
+.err { color: var(--warn); font-size: .85rem; margin: 10px 0 0; }
+#syncEmail { overflow-wrap: anywhere; }
+
 /* tab bar */
 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-template-columns: repeat(3, 1fr);
   background: color-mix(in srgb, var(--surface) 90%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
@@ -319,9 +326,30 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
         <p class="note">바꾸거나 지워도 오늘(주간 목표는 이번 주)부터 적용돼요. 지난 기록과 달성률은 그대로 남아요.</p>
       </div>
 
+      <div class="card" id="syncCard" hidden>
+        <h2>기기 연동</h2>
+        <div id="syncOut">
+          <div class="sub">컴퓨터와 폰에서 같은 계정으로 로그인하면 기록이 서로 맞춰져요.</div>
+          <form class="login" id="loginForm" novalidate>
+            <input id="loginEmail" type="email" placeholder="이메일" autocomplete="username" autocapitalize="none" spellcheck="false" aria-label="이메일">
+            <input id="loginPw" type="password" placeholder="비밀번호" autocomplete="current-password" enterkeyhint="go" aria-label="비밀번호">
+            <button class="primary" id="loginBtn" type="submit">로그인</button>
+            <button class="textbtn" id="resetPw" type="button">비밀번호를 잊었어요</button>
+          </form>
+        </div>
+        <div id="syncIn" hidden>
+          <div class="sub"><span id="syncEmail"></span></div>
+          <div class="backup" style="align-items: center; justify-content: space-between;">
+            <span id="syncState" role="status"></span>
+            <button class="btn" id="logoutBtn" type="button">로그아웃</button>
+          </div>
+        </div>
+        <p class="err" id="syncErr" role="alert" hidden></p>
+      </div>
+
       <div class="card">
         <h2>백업</h2>
-        <div class="sub">기록은 이 폰에만 저장돼요. 폰을 바꾸거나 다른 기기에서 쓰려면 백업 파일로 옮기세요.</div>
+        <div class="sub" id="backupNote">기록은 이 기기에만 저장돼요. 다른 기기로 옮기려면 백업 파일을 쓰세요.</div>
         <div class="backup">
           <button class="btn" id="exportBtn" type="button">백업 파일 저장</button>
           <button class="btn" id="importBtn" type="button">백업 불러오기</button>
@@ -423,14 +451,24 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   function load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (d) { S.settings = normSettings(d.settings); S.months = d.months && typeof d.months === "object" ? d.months : {}; }
+      if (d) { GC.meta = d.sync || null; S.settings = normSettings(d.settings); S.months = d.months && typeof d.months === "object" ? d.months : {}; }
     } catch (e) {}
   }
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify({ v: 1, settings: S.settings, months: S.months })); }
-    catch (e) { toast("저장하지 못했어요. 폰의 저장 공간을 확인해 주세요"); }
-    render();
+  function persist() {
+    try { localStorage.setItem(KEY, JSON.stringify({ v: 1, settings: S.settings, months: S.months, sync: GC.meta || undefined })); }
+    catch (e) { toast("저장하지 못했어요. 기기의 저장 공간을 확인해 주세요"); }
   }
+  function save() { persist(); render(); window.GCSync?.changed(); }
+  // used by sync.js
+  const GC = window.GC = {
+    meta: null, // { uid, base }: which account this copy belongs to, and the last state the server confirmed
+    state: () => ({ settings: S.settings, months: S.months }),
+    replace(st) {
+      S.settings = normSettings(st.settings); S.months = st.months; persist();
+      if (!S.editing) render(); // a rebuild would break Korean input in progress; finishing the edit redraws anyway
+    },
+    persist, toast,
+  };
   let toastT;
   function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2600); }
 
@@ -803,5 +841,6 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
 })();
 </script>
+<script type="module" src="sync.js"></script>
 </body>
 </html>
