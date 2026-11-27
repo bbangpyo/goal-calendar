@@ -102,7 +102,7 @@ header.top h1 { margin: 0; font-size: 1.2rem; font-weight: 700; letter-spacing: 
 .btn.icon { width: 38px; padding: 0; font-size: 1.1rem; }
 .dow, .row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .dow div { text-align: center; font-size: 0.74rem; color: var(--muted); padding-bottom: 4px; }
-.dow div:nth-child(7) { color: var(--today); }
+.dow div:nth-child(1) { color: var(--today); }
 /* one seamless table: shared hairlines, no gaps between days */
 .weeks { display: grid; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .week { display: grid; }
@@ -267,7 +267,7 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
           <button class="btn icon" id="nextM" aria-label="다음 달">›</button>
         </div>
       </div>
-      <div class="dow"><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div><div>일</div></div>
+      <div class="dow"><div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div>
       <div class="weeks" id="weeks"></div>
       <div class="stats">
         <div class="stat"><b id="avg" class="num">–</b><span>이번 달 평균 달성률</span></div>
@@ -424,13 +424,14 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   const parse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
   const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return ymd(d); };
   const today = () => ymd(new Date());
-  const mondayOf = (s) => { const d = parse(s); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return ymd(d); };
+  // weeks run Sunday to Saturday; a week is stored under its Sunday
+  const mondayOf = (s) => { const d = parse(s); d.setDate(d.getDate() - d.getDay()); return ymd(d); };
   const wd = (s) => parse(s).getDay();
   const mKey = (s) => s.slice(0, 7);
   const addMonths = (mk, n) => { const [y, m] = mk.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; };
   const newId = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-5);
   const DOW = ["일", "월", "화", "수", "목", "금", "토"];
-  const ORDER = [1, 2, 3, 4, 5, 6, 0];
+  const ORDER = [0, 1, 2, 3, 4, 5, 6];
   const md = (s) => { const d = parse(s); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const wide = matchMedia("(min-width: 920px)");
@@ -482,10 +483,34 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   const peekWeek = (mon) => S.months[mKey(mon)]?.weeks?.[mon];
   function week(mon) { const m = month(mKey(mon)); m.weeks ||= {}; const w = m.weeks[mon] || (m.weeks[mon] = {}); w.items ||= []; w.done ||= {}; return w; }
 
+  // older versions started weeks on Monday: move those weeks to the Sunday before. Returns true if anything moved.
+  function sundayWeeks(st) {
+    let moved = false;
+    const shift = (k) => (k && wd(k) === 1 ? addDays(k, -1) : k);
+    for (const g of st.settings.weekly || []) {
+      const c = shift(g.created), d = shift(g.deleted);
+      if (c !== g.created || d !== g.deleted) { g.created = c; g.deleted = d; moved = true; }
+    }
+    for (const mk of Object.keys(st.months)) {
+      const weeks = st.months[mk].weeks || {};
+      for (const k of Object.keys(weeks)) {
+        if (wd(k) !== 1) continue;
+        const nk = addDays(k, -1), w = weeks[k];
+        delete weeks[k];
+        const m = st.months[mKey(nk)] || (st.months[mKey(nk)] = { days: {}, weeks: {} });
+        m.weeks ||= {};
+        const t = m.weeks[nk];
+        if (t) { t.items = [...(t.items || []), ...(w.items || [])]; t.done = { ...(t.done || {}), ...(w.done || {}) }; }
+        else m.weeks[nk] = w;
+        moved = true;
+      }
+    }
+    return moved;
+  }
   function load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (d) { GC.meta = d.sync || null; S.settings = normSettings(d.settings); S.months = d.months && typeof d.months === "object" ? d.months : {}; }
+      if (d) { GC.meta = d.sync || null; S.settings = normSettings(d.settings); S.months = d.months && typeof d.months === "object" ? d.months : {}; if (sundayWeeks(S)) persist(); }
     } catch (e) {}
   }
   function persist() {
@@ -498,7 +523,9 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
     meta: null, // { uid, base }: which account this copy belongs to, and the last state the server confirmed
     state: () => ({ settings: S.settings, months: S.months }),
     replace(st) {
-      S.settings = normSettings(st.settings); S.months = st.months; persist();
+      S.settings = normSettings(st.settings); S.months = st.months;
+      if (sundayWeeks(S)) setTimeout(() => window.GCSync?.changed(), 0); // the cloud still has Monday weeks
+      persist();
       if (!S.editing) render(); // a rebuild would break Korean input in progress; finishing the edit redraws anyway
     },
     persist, toast,
@@ -785,7 +812,7 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
   }
   function renderWeek() {
     const mon = mondayOf(S.sel), sun = addDays(mon, 6);
-    const thu = parse(addDays(mon, 3));
+    const thu = parse(addDays(mon, 4));
     $("weekTitle").textContent = `${thu.getMonth() + 1}월 ${Math.ceil(thu.getDate() / 7)}째 주 목표`;
     const a = parse(mon), b = parse(sun);
     $("weekRange").textContent = `${a.getMonth() + 1}/${a.getDate()} – ${b.getMonth() + 1}/${b.getDate()}`;
@@ -931,7 +958,7 @@ input.edit { flex: 1; min-width: 0; border: 1px solid var(--ink); border-radius:
     try {
       const d = JSON.parse(await f.text());
       if (d?.app !== "goal-calendar" || !d.settings || !d.months) throw new Error("bad");
-      S.settings = normSettings(d.settings); S.months = d.months; save(); toast("백업을 불러왔어요");
+      S.settings = normSettings(d.settings); S.months = d.months; sundayWeeks(S); save(); toast("백업을 불러왔어요");
     } catch (e) { toast("목표 캘린더 백업 파일이 아니에요"); }
   });
 
